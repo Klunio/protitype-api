@@ -2,3 +2,4 @@ loguru~=0.5.3
 sqlalchemy~=1.4.27
 fastapi~=0.74.1
 starlette~=0.17.1
+asyncpg

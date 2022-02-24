@@ -8,7 +8,8 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-class InventoryItem(BaseModel):
-    id: Optional[int] = 0
-    description: str
-    create_time: datetime = Field(default_factory=datetime.now)
+class Player(BaseModel):
+    username: Optional[str] = ""
+    player_id: Optional[str] = ""
+    xp: Optional[int] = 0
+    gold: Optional[int] = 0

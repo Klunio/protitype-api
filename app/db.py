@@ -1,21 +1,23 @@
 # -*- coding: utf-8 -*-
-# Create Time: 01/05 2022
+# Create Time: 02/22 2022
 # Author: Yunquan (Clooney) Gu
 from typing import List
+from uuid import uuid4
 
 from loguru import logger
-from sqlalchemy import delete, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import sessionmaker
 
-from app.models.Tables import Base, ItemTable
-from app.models.schema import InventoryItem
+from app.config import settings
+from app.models.Tables import Base, PlayerItem
+from app.models.schema import Player
 
 
 class database:
     def __init__(self):
-        self.engine = create_async_engine("sqlite+aiosqlite:///inventory.db")
+        self.engine = create_async_engine(settings.db_url)
         self.async_session = sessionmaker(
             bind=self.engine, expire_on_commit=False, class_=AsyncSession
         )
@@ -24,38 +26,47 @@ class database:
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-    async def add_item(self, item: InventoryItem) -> None:
+    async def create_new_player(self, username: str) -> Player:
+        new_row = PlayerItem(
+            username=username,
+            player_id=str(uuid4()),
+            xp=0, gold=0
+        )
         async with self.async_session() as session:
-            session.add(ItemTable(
-                description=item.description,
-                create_time=item.create_time
-            ))
+            session.add(new_row)
             await session.commit()
-        logger.info('[Database] Inserting succeed')
+            await session.refresh(new_row)
 
-    async def get_all(self) -> List[InventoryItem]:
-        async with self.async_session() as session:
-            result = (await session.execute(select(ItemTable))).scalars()
-            return [
-                InventoryItem(
-                    id=i.id,
-                    description=i.description,
-                    create_time=i.create_time
-                ).dict() for i in result.all()]
+        new_player = Player(**new_row.__dict__)
+        logger.info(f'[Database] Creating player [{new_player}] succeed')
+        return new_player
 
-    async def delete_item(self, id) -> None:
+    async def retrieve(self, id: str) -> Player:
         async with self.async_session() as session:
-            await session.execute(delete(ItemTable).where(ItemTable.id == id))
-            await session.commit()
-            logger.info('[Database] Deleting succeed')
+            row = (await session.execute(
+                select(PlayerItem).where(PlayerItem.player_id == id)
+            )).scalars().one()
+            player = Player(**row.__dict__)
+            logger.info(f'[Database] Retrieve player [{player}] succeed')
+            return player
 
-    async def update_item(self, id: str, Description: str) -> None:
+    async def update(self, id: str, updated_player: Player) -> bool:
         async with self.async_session() as session:
-            await session.execute(
-                update(ItemTable).
-                    where(ItemTable.id == id).
-                    values(description=Description)
+            result = await session.execute(
+                update(PlayerItem).
+                    where(PlayerItem.player_id == id).
+                    values(**updated_player.dict())
             )
             await session.commit()
-        logger.info('[Database] Updating succeed')
+            logger.info('[Database] Updating done')
+            return result.rowcount > 0
 
+    async def topk(self, sortby: str, size: int) -> List[Player]:
+        async with self.async_session() as session:
+            result = (await session.execute(
+                select(PlayerItem)
+                    .order_by(PlayerItem.__dict__[sortby].desc())
+                    .limit(size)
+            )).fetchall()
+            logger.info(f'[Database] Get top k by [{sortby}] with size [{size}]')
+            return [Player(**i[0].__dict__) for i in result]
